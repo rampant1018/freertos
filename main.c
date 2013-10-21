@@ -73,7 +73,8 @@ void read_romfs_task(void *pvParameters)
 		count = fio_read(fd, buf, sizeof(buf));
 		
 		//Write buffer to fd 1 (stdout, through uart)
-		fio_write(1, buf, count);
+		//fio_write(1, buf, count);
+		fio_write(1, buf, strlen(buf) + 1);
 	} while (count);
 	
 	while (1);
