@@ -1,6 +1,6 @@
 #define USE_STDPERIPH_DRIVER
 #include "stm32f10x.h"
-
+#include "stm32_p103.h"
 /* Scheduler includes. */
 #include "FreeRTOS.h"
 #include "task.h"
@@ -11,13 +11,21 @@
 /* Filesystem includes */
 #include "filesystem.h"
 #include "fio.h"
+#include "romfs.h"
 
-extern const char _sromfs;
+#include "clib.h"
+#include "shell.h"
+
+/* _sromfs symbol can be found in main.ld linker script
+ * it contains file system structure of test_romfs directory
+ */
+extern const unsigned char _sromfs;
 
 static void setup_hardware();
 
 volatile xSemaphoreHandle serial_tx_wait_sem = NULL;
-
+/* Add for serial input */
+volatile xQueueHandle serial_rx_queue = NULL;
 
 /* IRQ handler to handle USART2 interruptss (both transmit and receive
  * interrupts). */
@@ -35,6 +43,12 @@ void USART2_IRQHandler()
 		/* Diables the transmit interrupt. */
 		USART_ITConfig(USART2, USART_IT_TXE, DISABLE);
 		/* If this interrupt is for a receive... */
+	}else if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET){
+		char msg = USART_ReceiveData(USART2);
+
+		/* If there is an error when queueing the received byte, freeze! */
+		if(!xQueueSendToBackFromISR(serial_rx_queue, &msg, &xHigherPriorityTaskWoken))
+			while(1);
 	}
 	else {
 		/* Only transmit and receive interrupts should be enabled.
@@ -63,21 +77,32 @@ void send_byte(char ch)
 	USART_ITConfig(USART2, USART_IT_TXE, ENABLE);
 }
 
-void read_romfs_task(void *pvParameters)
+char recv_byte()
+{
+	USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
+	char msg;
+	while(!xQueueReceive(serial_rx_queue, &msg, portMAX_DELAY));
+	return msg;
+}
+void command_prompt(void *pvParameters)
 {
 	char buf[128];
-	size_t count;
-	int fd = fs_open("/romfs/test.txt", 0, O_RDONLY);
-	do {
-		//Read from /romfs/test.txt to buffer
-		count = fio_read(fd, buf, sizeof(buf));
-		
-		//Write buffer to fd 1 (stdout, through uart)
-		//fio_write(1, buf, count);
-		fio_write(1, buf, strlen(buf) + 1);
-	} while (count);
+	char *argv[20];
+	fio_printf(1, "\rWelcome to FreeRTOS Shell\r\n");
+	while(1){
+		fio_printf(1, "\r>>");
+		fio_read(0, buf, 127);
 	
-	while (1);
+		int n=parse_command(buf, argv);
+
+		/* will return pointer to the command function */
+		cmdfunc *fptr=do_command(argv[0]);
+		if(fptr!=NULL)
+			fptr(n, argv);
+		else
+			fio_printf(2, "\r\n\"%s\" command not found.\r\n", argv[0]);
+	}
+
 }
 
 int main()
@@ -94,10 +119,13 @@ int main()
 	/* Create the queue used by the serial task.  Messages for write to
 	 * the RS232. */
 	vSemaphoreCreateBinary(serial_tx_wait_sem);
+	/* Add for serial input 
+	 * Reference: www.freertos.org/a00116.html */
+	serial_rx_queue = xQueueCreate(1, sizeof(char));
 
 	/* Create a task to output text read from romfs. */
-	xTaskCreate(read_romfs_task,
-	            (signed portCHAR *) "Read romfs",
+	xTaskCreate(command_prompt,
+	            (signed portCHAR *) "Command Prompt",
 	            512 /* stack size */, NULL, tskIDLE_PRIORITY + 2, NULL);
 
 	/* Start running the tasks. */

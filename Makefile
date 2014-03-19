@@ -14,16 +14,19 @@ FREERTOS_SRC = $(CODEBASE)/libraries/FreeRTOS
 FREERTOS_INC = $(FREERTOS_SRC)/include/                                       
 FREERTOS_PORT_INC = $(FREERTOS_SRC)/portable/GCC/ARM_$(ARCH)/
 
+HEAP_IMPL = heap_ww
+
 all: main.bin
 
-main.bin: test-romfs.o main.c linenoise.c
+main.bin: test-romfs.o main.c clib.c fio.c shell.c host.c mmtest.c
 	$(CROSS_COMPILE)gcc \
 		-I. -I$(FREERTOS_INC) -I$(FREERTOS_PORT_INC) \
 		-I$(CODEBASE)/libraries/CMSIS/CM3/CoreSupport \
 		-I$(CODEBASE)/libraries/CMSIS/CM3/DeviceSupport/ST/STM32F10x \
 		-I$(CODEBASE)/libraries/STM32F10x_StdPeriph_Driver/inc \
 		-fno-common -O0 \
-		-gdwarf-2 -g3 \
+		-std=c99 -pedantic \
+		-gdwarf-2 -ffreestanding -g3 \
 		-mcpu=cortex-m3 -mthumb \
 		-c \
 		\
@@ -41,7 +44,7 @@ main.bin: test-romfs.o main.c linenoise.c
 		$(FREERTOS_SRC)/queue.c \
 		$(FREERTOS_SRC)/tasks.c \
 		$(FREERTOS_SRC)/portable/GCC/ARM_CM3/port.c \
-		$(FREERTOS_SRC)/portable/MemMang/heap_1.c \
+		$(FREERTOS_SRC)/portable/MemMang/$(HEAP_IMPL).c \
 		\
 		stm32_p103.c \
 		\
@@ -53,7 +56,11 @@ main.bin: test-romfs.o main.c linenoise.c
 		osdebug.c \
 		string-util.c \
 		\
-		main.c
+		main.c \
+		clib.c \
+		shell.c \
+		host.c \
+		mmtest.c
 	$(CROSS_COMPILE)ld -Tmain.ld -nostartfiles -o main.elf \
 		core_cm3.o \
 		system_stm32f10x.o \
@@ -65,7 +72,7 @@ main.bin: test-romfs.o main.c linenoise.c
 		misc.o \
 		\
 		croutine.o list.o queue.o tasks.o \
-		port.o heap_1.o \
+		port.o $(HEAP_IMPL).o \
 		\
 		stm32_p103.o \
 		\
@@ -73,6 +80,10 @@ main.bin: test-romfs.o main.c linenoise.c
 		\
 		osdebug.o \
 		string-util.o \
+		clib.o \
+		shell.o \
+		host.o \
+		mmtest.o \
 		\
 		main.o
 	$(CROSS_COMPILE)objcopy -Obinary main.elf main.bin
@@ -91,15 +102,13 @@ test-romfs.o: mkromfs
 
 
 qemu: main.bin $(QEMU_STM32)
-	$(QEMU_STM32) -M stm32-p103 -kernel main.bin
+	$(QEMU_STM32) -M stm32-p103 -kernel main.bin -semihosting
 
 qemudbg: main.bin $(QEMU_STM32)
 	$(QEMU_STM32) -M stm32-p103 \
 		-gdb tcp::3333 -S \
-		-kernel main.bin
-		
-qemuauto: main.bin $(QEMU_STM32)
-	bash emulate.sh main.bin
+		-kernel main.bin -semihosting
 
 clean:
 	rm -f *.o *.elf *.bin *.list mkromfs
+

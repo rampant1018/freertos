@@ -54,28 +54,23 @@ char *strchr(const char *s, int c)
 
 char *strcpy(char *dest, const char *src)
 {
-	const unsigned char *s = src;
-	unsigned char *d = dest;
+	const char *s = src;
+	char *d = dest;
 	while ((*d++ = *s++));
 	return dest;
 }
 
 char *strncpy(char *dest, const char *src, size_t n)
 {
-	const unsigned char *s = src;
-	unsigned char *d = dest;
+	const char *s = src;
+	char *d = dest;
 	while (n-- && (*d++ = *s++));
 	return dest;
 }
-/*
-size_t strlen(const char *s)
+
+int strcmp(const char *a, const char *b)
 {
-	const char *a = s;
-	const size_t *w;
-	for(; (uintptr_t) s % ALIGN; s++)
-		if(!*s) return (s - a);
-	for(w = (const void *) s; !HASZERO(*w); w++);
-	for(s = (const void *) w; *s; s++);
-	return (s - a);
+        while(*a && (*a==*b))
+                ++a, ++b;
+        return *a-*b;
 }
-*/
